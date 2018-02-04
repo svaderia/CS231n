@@ -254,6 +254,7 @@ class FullyConnectedNet(object):
         cache_affine = {}
         cache_relu = {}
         cache_bn = {}
+        cache_drop = {}
         inp = new_x
         for ln in range(1, self.num_layers):
             W, b = self.params["W{}".format(ln)], self.params["b{}".format(ln)]
@@ -265,6 +266,10 @@ class FullyConnectedNet(object):
                 out = bn
             relu, rcache = relu_forward(out)
             inp = relu
+            if self.use_dropout:
+                drop, dcache = dropout_forward(relu, self.dropout_param)
+                cache_drop[ln] = dcache
+                inp = drop
             cache_affine[ln] = cache
             cache_relu[ln] = rcache
         ln += 1
@@ -299,6 +304,8 @@ class FullyConnectedNet(object):
         grads["b{}".format(ln)] = db
         loss += 0.5 * self.reg * np.sum(self.params["W{}".format(ln)]**2)
         for ln in range(self.num_layers-1, 0, -1):
+            if self.use_dropout:
+                drelu = dropout_backward(drelu, cache_drop[ln])
             dout = relu_backward(drelu, cache_relu[ln])
             if self.use_batchnorm:
                 dbn, dgamma, dbeta = batchnorm_backward(dout, cache_bn[ln])
