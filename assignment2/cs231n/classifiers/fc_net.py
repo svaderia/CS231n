@@ -182,12 +182,17 @@ class FullyConnectedNet(object):
         ############################################################################
         layers = [input_dim] + hidden_dims + [num_classes]
         for ln, inp, outp in zip(range(1,self.num_layers+1), layers[:-1], layers[1:]):
-            keys = "W{} b{}".format(ln,ln).split()
+            keys = "W{} b{} gamma{} beta{}".format(ln,ln,ln,ln).split()
             W = np.random.normal(scale=weight_scale, size=(inp, outp))
             b = np.zeros(outp)
             self.params[keys[0]] = W
             self.params[keys[1]] = b
-
+            if self.use_batchnorm and ln < self.num_layers:
+                gamma = np.ones(outp)
+                beta = np.zeros(outp)
+                self.params[keys[2]] = gamma
+                self.params[keys[3]] = beta
+            
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -248,10 +253,16 @@ class FullyConnectedNet(object):
         new_x = np.array([i.flatten() for i in X])
         cache_affine = {}
         cache_relu = {}
+        cache_bn = {}
         inp = new_x
         for ln in range(1, self.num_layers):
             W, b = self.params["W{}".format(ln)], self.params["b{}".format(ln)]
             out, cache = affine_forward(inp, W, b)
+            if self.use_batchnorm:
+                gamma, beta = self.params["gamma{}".format(ln)], self.params["beta{}".format(ln)]
+                bn, bncache = batchnorm_forward(out, gamma, beta, self.bn_params[ln-1])
+                cache_bn[ln] = bncache
+                out = bn
             relu, rcache = relu_forward(out)
             inp = relu
             cache_affine[ln] = cache
@@ -284,14 +295,20 @@ class FullyConnectedNet(object):
         ############################################################################
         loss, dloss = softmax_loss(scores, y)
         drelu, dW, db = affine_backward(dloss, score_cache)
-        grads["W{}".format(ln)] = dW
+        grads["W{}".format(ln)] = dW + self.reg * self.params["W{}".format(ln)]
         grads["b{}".format(ln)] = db
         loss += 0.5 * self.reg * np.sum(self.params["W{}".format(ln)]**2)
         for ln in range(self.num_layers-1, 0, -1):
             dout = relu_backward(drelu, cache_relu[ln])
+            if self.use_batchnorm:
+                dbn, dgamma, dbeta = batchnorm_backward(dout, cache_bn[ln])
+                grads["gamma{}".format(ln)] = dgamma
+                grads["beta{}".format(ln)] = dbeta
+                dout = dbn
             drelu, dW, db = affine_backward(dout, cache_affine[ln])
             grads["W{}".format(ln)] = dW + self.reg * self.params["W{}".format(ln)]
             grads["b{}".format(ln)] = db
+            
             loss += 0.5 * self.reg * np.sum(self.params["W{}".format(ln)]**2)
         ############################################################################
         #                             END OF YOUR CODE                             #
